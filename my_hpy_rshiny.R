@@ -1,0 +1,136 @@
+library(shiny)
+library(shinythemes)
+library(caret)
+library(naivebayes)
+library(rpart) #DT
+
+# using dataset
+hypertension <- read.csv("C:/Users/BECAUSE/OneDrive/Desktop/hy/hypertension_data.csv")
+hypertension$target <- as.factor(hypertension$target)
+
+#data cleaning
+hypertension <- na.omit(hypertension)
+
+# training and testing sets
+set.seed(123)  # Set seed for reproducibility
+trainIndex <- createDataPartition(hypertension$target, p = .8, 
+                                  list = FALSE, 
+                                  times = 1) # .8 train, .2 test
+data_train <- hypertension[trainIndex, ] #has 80% rows. i.e 20846 rows as training
+data_test  <- hypertension[-trainIndex, ]#has 20% rows i.e 5210 rows as testing
+
+# Define the Shiny app
+ui <- fluidPage(
+  theme = shinytheme("cyborg"),
+  titlePanel("Hypertension Prediction", windowTitle = "Hypertension Predictor"),
+  sidebarLayout(
+    sidebarPanel(
+      h3("Patient Information"),
+      div(class = "sidebar-panel",
+          sliderInput("age", "Age:", min = 18, max = 100, value = 50),
+          selectInput("sex", "Sex:", choices = c("Male", "Female")),
+          selectInput("cp", "Chest Pain Type:", choices = c(1, 2, 3, 4)),
+          sliderInput("trestbps", "Resting Blood Pressure:", min = 90, max = 200, value = 120),
+          sliderInput("chol", "Cholesterol:", min = 100, max = 400, value = 200),
+          selectInput("fbs", "Fasting Blood Sugar:", choices = c(0, 1)),
+          selectInput("restecg", "Resting ECG Results:", choices = c(0, 1, 2)),
+          sliderInput("thalach", "Maximum Heart Rate:", min = 70, max = 200, value = 150),
+          selectInput("exang", "Exercise Induced Angina:", choices = c(0, 1)),
+          sliderInput("oldpeak", "ST Depression:", min = 0, max = 6, value = 1),
+          selectInput("slope", "Slope of ST Segment:", choices = c(0, 1, 2)),
+          selectInput("ca", "Number of Major Vessels:", choices = c(0, 1, 2, 3)),
+          selectInput("thal", "Thalassemia:", choices = c(0, 1, 2, 3)),
+          br(),
+          actionButton("predict_logistic", "Predict (Logistic Regression)",class = "btn-primary"),
+          actionButton("predict_dt", "Predict (Decision Tree)",class = "btn-primary"), 
+          actionButton("predict_nb", "Predict (Naive Bayes)",class = "btn-primary")
+      )
+    ),
+    mainPanel(
+      h3("Hypertension Prediction Result:"),
+      fluidRow(
+        wellPanel(
+          h3("Prediction", style = "color: #b0cff7;"),
+          h4(textOutput("prediction_result"))
+        )
+      ),
+      fluidRow(
+        wellPanel(
+          h3("Accuracy", style = "color: #b0cff7;"),
+          h1(textOutput("accuracy_result"))
+        )
+      )
+    )
+  )
+)
+
+server <- function(input, output) {
+  user_data <- reactive({
+    data.frame(
+      age = input$age,
+      sex = as.numeric(input$sex == "Female"),
+      cp = as.integer(input$cp),
+      trestbps = input$trestbps,
+      chol = input$chol,
+      fbs = as.integer(input$fbs),
+      restecg = as.integer(input$restecg),
+      thalach = input$thalach,
+      exang = as.integer(input$exang),
+      oldpeak = input$oldpeak,
+      slope = as.integer(input$slope),
+      ca = as.integer(input$ca),
+      thal = as.integer(input$thal)
+    )
+  })
+  
+  observeEvent(input$predict_logistic, {
+    # Logistic Regression
+    model_logistic <- glm(target ~ ., data = data_train, family = binomial)
+    prediction_logistic <- ifelse(predict(model_logistic, newdata = user_data(), type = "response") > 0.5, "Hypertension detected.", "No hypertension detected.")
+    
+    accuracy_logistic <- sum(!is.na(predict(model_logistic, newdata = data_test, type = "response") > 0.5)) / nrow(data_test)
+    
+    output$prediction_result <- renderPrint({
+      paste( prediction_logistic)
+    })
+    
+    output$accuracy_result <- renderPrint({
+      paste("Accuracy (Logistic Regression):", round(accuracy_logistic * 100, 2), "%")
+    })
+  })
+
+  observeEvent(input$predict_dt, {
+    # Decision Tree
+    model_dt <- rpart(target ~ ., data = data_train, method = "class")
+    prediction_dt <- ifelse(predict(model_dt, newdata = user_data(), type = "class") == 1, "Hypertension detected.", "No hypertension detected.")
+    
+    accuracy_dt <- sum(predict(model_dt, newdata = data_test, type = "class") == data_test$target) / nrow(data_test)
+    
+    output$prediction_result <- renderPrint({
+      paste( prediction_dt)
+    })
+    
+    output$accuracy_result <- renderPrint({
+      paste("Accuracy (Decision Tree):", round(accuracy_dt * 100, 2), "%")
+    })
+  }) 
+  
+  observeEvent(input$predict_nb, {
+    # Naive Bayes
+    model_nb <- naive_bayes(target ~ ., data = data_train)
+    prediction_nb <- ifelse(predict(model_nb, newdata = user_data()) == 1, "Hypertension detected.", "No hypertension detected.")
+    
+    accuracy_nb <- sum(predict(model_nb, newdata = data_test) == data_test$target) / nrow(data_test)
+    
+    output$prediction_result <- renderPrint({
+      paste( prediction_nb)
+    })
+    
+    output$accuracy_result <- renderPrint({
+      paste("Accuracy (Naive Bayes):", round(accuracy_nb * 100, 2), "%")
+    })
+  })
+}
+
+shinyApp(ui = ui, server = server)
+
